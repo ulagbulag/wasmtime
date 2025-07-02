@@ -215,6 +215,20 @@ impl StoreOpaque {
         Ok(())
     }
 
+    /// Asynchronously collect garbage, potentially growing the GC heap
+    /// in the current thread.
+    pub(crate) async fn gc_async_single_rt(
+        &mut self,
+        why: Option<&GcHeapOutOfMemory<()>>,
+    ) -> Result<()> {
+        assert!(self.async_support());
+        self.on_fiber_single_rt(|store| unsafe {
+            store.maybe_async_gc(None, why.map(|oom| oom.bytes_needed()))
+        })
+        .await??;
+        Ok(())
+    }
+
     async fn grow_or_collect_gc_heap_async(&mut self, bytes_needed: Option<u64>) {
         assert!(self.async_support());
         if let Some(bytes_needed) = bytes_needed {

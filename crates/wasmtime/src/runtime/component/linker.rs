@@ -447,6 +447,33 @@ impl<T: 'static> LinkerInstance<'_, T> {
         self.func_wrap(name, ff)
     }
 
+    /// Defines a new host-provided `!Send` async function into this [`Linker`].
+    ///
+    /// This is exactly like [`Self::func_wrap`] except it takes an async
+    /// host function.
+    #[cfg(feature = "async")]
+    pub fn func_wrap_async_single_rt<Params, Return, F>(&mut self, name: &str, f: F) -> Result<()>
+    where
+        F: for<'a> Fn(
+                StoreContextMut<'a, T>,
+                Params,
+            ) -> Box<dyn Future<Output = Result<Return>> + 'a>
+            + Send
+            + Sync
+            + 'static,
+        Params: ComponentNamedList + Lift + 'static,
+        Return: ComponentNamedList + Lower + 'static,
+    {
+        assert!(
+            self.engine.config().async_support,
+            "cannot use `func_wrap_async_single_rt` without enabling async support in the config"
+        );
+        let ff = move |store: StoreContextMut<'_, T>, params: Params| -> Result<Return> {
+            store.block_on_single_rt(|store| f(store, params).into())?
+        };
+        self.func_wrap(name, ff)
+    }
+
     /// Defines a new host-provided async function into this [`LinkerInstance`].
     ///
     /// This allows the caller to register host functions with the
@@ -674,6 +701,35 @@ impl<T: 'static> LinkerInstance<'_, T> {
             move |mut cx: crate::Caller<'_, T>, (param,): (u32,)| {
                 cx.as_context_mut()
                     .block_on(|store| dtor(store, param).into())?
+            },
+        ));
+        self.insert(name, Definition::Resource(ty, dtor))?;
+        Ok(())
+    }
+
+    /// Identical to [`Self::resource`], except that it is bounded in the current thread.
+    #[cfg(feature = "async")]
+    pub fn resource_async_single_rt<F>(
+        &mut self,
+        name: &str,
+        ty: ResourceType,
+        dtor: F,
+    ) -> Result<()>
+    where
+        F: for<'a> Fn(StoreContextMut<'a, T>, u32) -> Box<dyn Future<Output = Result<()>> + 'a>
+            + Send
+            + Sync
+            + 'static,
+    {
+        assert!(
+            self.engine.config().async_support,
+            "cannot use `resource_async_single_rt` without enabling async support in the config"
+        );
+        let dtor = Arc::new(crate::func::HostFunc::wrap_inner(
+            &self.engine,
+            move |mut cx: crate::Caller<'_, T>, (param,): (u32,)| {
+                cx.as_context_mut()
+                    .block_on_single_rt(|store| dtor(store, param).into())?
             },
         ));
         self.insert(name, Definition::Resource(ty, dtor))?;

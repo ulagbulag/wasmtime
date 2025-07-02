@@ -156,6 +156,52 @@ where
             .await?
     }
 
+    /// Invokes this WebAssembly function with the specified parameters.
+    ///
+    /// Returns either the results of the call, or a [`Trap`] if one happened.
+    ///
+    /// For more information, see the [`Func::typed`] and
+    /// [`Func::call_async_single_rt`] documentation.
+    ///
+    /// # Errors
+    ///
+    /// For more information on errors see the documentation on [`Func::call`].
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if it is called when the underlying [`Func`] is
+    /// connected to a synchronous store.
+    ///
+    /// [`Trap`]: crate::Trap
+    #[cfg(feature = "async")]
+    pub async fn call_async_single_rt(
+        &self,
+        mut store: impl AsContextMut,
+        params: Params,
+    ) -> Result<Results>
+    where
+        Params: Sync,
+        Results: Sync,
+    {
+        let mut store = store.as_context_mut();
+        assert!(
+            store.0.async_support(),
+            "must use `call` with non-async stores"
+        );
+
+        #[cfg(feature = "gc")]
+        if Self::need_gc_before_call_raw(store.0, &params) {
+            store.gc_async_single_rt(None).await?;
+        }
+
+        store
+            .on_fiber_single_rt(|store| {
+                let func = self.func.vm_func_ref(store.0);
+                unsafe { Self::call_raw(store, &self.ty, func, params) }
+            })
+            .await?
+    }
+
     #[inline]
     #[cfg(feature = "gc")]
     pub(crate) fn need_gc_before_call_raw(_store: &StoreOpaque, _params: &Params) -> bool {

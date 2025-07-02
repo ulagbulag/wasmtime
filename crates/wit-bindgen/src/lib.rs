@@ -134,6 +134,13 @@ pub struct Opts {
     /// Whether or not to use async rust functions and traits.
     pub async_: AsyncConfig,
 
+    /// Whether or not to use `func_wrap_async_single_rt` when generating code
+    /// for async imports.
+    ///
+    /// Unlike `func_wrap_async`, `func_wrap_async_single_rt` allows host
+    /// functions to be called within the current thread.
+    pub single_threaded: bool,
+
     /// Whether or not to use `func_wrap_concurrent` when generating code for
     /// async imports.
     ///
@@ -241,6 +248,7 @@ pub enum AsyncConfig {
 pub enum CallStyle {
     Sync,
     Async,
+    AsyncSingleThreaded,
     Concurrent,
 }
 
@@ -319,6 +327,8 @@ impl Opts {
             AsyncConfig::All | AsyncConfig::AllExceptImports(_) | AsyncConfig::OnlyImports(_) => {
                 if self.concurrent_imports {
                     CallStyle::Concurrent
+                } else if self.single_threaded {
+                    CallStyle::AsyncSingleThreaded
                 } else {
                     CallStyle::Async
                 }
@@ -559,7 +569,7 @@ impl Wasmtime {
 
                     format!(
                         "
-                            #[allow(clippy::all)]
+                            #[allow(async_fn_in_trait, clippy::all)]
                             pub mod {snake} {{
                                 #[allow(unused_imports)]
                                 use {wt}::component::__internal::{{anyhow, Box}};
@@ -780,7 +790,7 @@ pub fn new<_T>(
 
                 let module = format!(
                     "
-                        #[allow(clippy::all)]
+                        #[allow(async_fn_in_trait, clippy::all)]
                         pub mod {snake} {{
                             #[allow(unused_imports)]
                             use {wt}::component::__internal::{{anyhow, Box}};
@@ -848,6 +858,7 @@ pub fn new<_T>(
             CallStyle::Async | CallStyle::Concurrent => {
                 ("async", "_async", "where _T: Send", ".await")
             }
+            CallStyle::AsyncSingleThreaded => ("async", "_async_single_rt", "", ".await"),
             CallStyle::Sync => ("", "", "", ""),
         };
         uwriteln!(
@@ -1592,8 +1603,8 @@ impl Wasmtime {
     ) {
         let gate = FeatureGate::open(src, stability);
         let camel = name.to_upper_camel_case();
-        if let CallStyle::Async | CallStyle::Concurrent = opts.drop_call_style(qualifier, name) {
-            uwriteln!(
+        match opts.drop_call_style(qualifier, name) {
+            CallStyle::Async | CallStyle::Concurrent => uwriteln!(
                 src,
                 "{inst}.resource_async(
                     \"{name}\",
@@ -1604,9 +1615,20 @@ impl Wasmtime {
                         }})
                     }},
                 )?;"
-            )
-        } else {
-            uwriteln!(
+            ),
+            CallStyle::AsyncSingleThreaded => uwriteln!(
+                src,
+                "{inst}.resource_async_single_rt(
+                    \"{name}\",
+                    {wt}::component::ResourceType::host::<{camel}>(),
+                    move |mut store, rep| {{
+                        {wt}::component::__internal::Box::new(async move {{
+                            Host{camel}::drop(&mut host_getter(store.data_mut()), {wt}::component::Resource::new_own(rep)).await
+                        }})
+                    }},
+                )?;"
+            ),
+            CallStyle::Sync => uwriteln!(
                 src,
                 "{inst}.resource(
                     \"{name}\",
@@ -1615,7 +1637,7 @@ impl Wasmtime {
                         Host{camel}::drop(&mut host_getter(store.data_mut()), {wt}::component::Resource::new_own(rep))
                     }},
                 )?;"
-            )
+            ),
         }
         gate.close(src);
     }
@@ -2364,7 +2386,7 @@ impl<'a> InterfaceGenerator<'a> {
 
         let opt_t_send_bound = match self.generator.opts.call_style() {
             CallStyle::Async | CallStyle::Concurrent => "+ Send",
-            CallStyle::Sync => "",
+            CallStyle::AsyncSingleThreaded | CallStyle::Sync => "",
         };
 
         let mut sync_bounds = "Host".to_string();
@@ -2436,6 +2458,7 @@ impl<'a> InterfaceGenerator<'a> {
             match self.import_call_style(func) {
                 CallStyle::Sync => "func_wrap",
                 CallStyle::Async => "func_wrap_async",
+                CallStyle::AsyncSingleThreaded => "func_wrap_async_single_rt",
                 CallStyle::Concurrent => "func_wrap_concurrent",
             },
             func.name
@@ -2477,7 +2500,8 @@ impl<'a> InterfaceGenerator<'a> {
         self.src.push_str(")| {\n");
 
         if self.generator.opts.tracing {
-            if let CallStyle::Async | CallStyle::Concurrent = style {
+            if let CallStyle::Async | CallStyle::AsyncSingleThreaded | CallStyle::Concurrent = style
+            {
                 self.src.push_str("use tracing::Instrument;\n");
             }
 
@@ -2504,7 +2528,7 @@ impl<'a> InterfaceGenerator<'a> {
         }
 
         match &style {
-            CallStyle::Async => {
+            CallStyle::Async | CallStyle::AsyncSingleThreaded => {
                 uwriteln!(
                     self.src,
                     "{wt}::component::__internal::Box::new(async move {{"
@@ -2584,7 +2608,9 @@ impl<'a> InterfaceGenerator<'a> {
 
         self.src.push_str(match &style {
             CallStyle::Sync => ");\n",
-            CallStyle::Async | CallStyle::Concurrent => ").await;\n",
+            CallStyle::Async | CallStyle::AsyncSingleThreaded | CallStyle::Concurrent => {
+                ").await;\n"
+            }
         });
 
         if self.generator.opts.tracing {
@@ -2628,7 +2654,7 @@ impl<'a> InterfaceGenerator<'a> {
 
         match &style {
             CallStyle::Sync => (),
-            CallStyle::Async | CallStyle::Concurrent => {
+            CallStyle::Async | CallStyle::AsyncSingleThreaded | CallStyle::Concurrent => {
                 if self.generator.opts.tracing {
                     self.src.push_str("}.instrument(span))\n");
                 } else {
@@ -2645,7 +2671,9 @@ impl<'a> InterfaceGenerator<'a> {
         self.rustdoc(&func.docs);
 
         let style = self.import_call_style(func);
-        if let (CallStyle::Async, _) | (CallStyle::Concurrent, true) = (&style, async_sugar) {
+        if let (CallStyle::Async | CallStyle::AsyncSingleThreaded, _)
+        | (CallStyle::Concurrent, true) = (&style, async_sugar)
+        {
             self.push_str("async ");
         }
         self.push_str("fn ");
@@ -2726,11 +2754,16 @@ impl<'a> InterfaceGenerator<'a> {
         // that get to be optionally async/sync.
         let style = self.generator.opts.call_style();
         let (async_, async__, await_, concurrent) = match &style {
-            CallStyle::Async | CallStyle::Concurrent => {
+            CallStyle::Async | CallStyle::AsyncSingleThreaded | CallStyle::Concurrent => {
                 if self.generator.opts.concurrent_exports {
                     ("", "INVALID", "INVALID", true)
                 } else {
-                    ("async", "_async", ".await", false)
+                    let async__ = if matches!(style, CallStyle::AsyncSingleThreaded) {
+                        "_async_single_rt"
+                    } else {
+                        "_async"
+                    };
+                    ("async", async__, ".await", false)
                 }
             }
             CallStyle::Sync => ("", "", "", false),
@@ -2782,13 +2815,15 @@ impl<'a> InterfaceGenerator<'a> {
             CallStyle::Async => {
                 uwrite!(self.src, " where <S as {wt}::AsContext>::Data: Send");
             }
-            CallStyle::Sync => {}
+            CallStyle::AsyncSingleThreaded | CallStyle::Sync => {}
         }
         uwrite!(self.src, "{{\n");
 
         // TODO: support tracing concurrent calls
         if self.generator.opts.tracing && !concurrent {
-            if let CallStyle::Async | CallStyle::Concurrent = &style {
+            if let CallStyle::Async | CallStyle::AsyncSingleThreaded | CallStyle::Concurrent =
+                &style
+            {
                 self.src.push_str("use tracing::Instrument;\n");
             }
 
@@ -2808,7 +2843,10 @@ impl<'a> InterfaceGenerator<'a> {
                 func.name,
             ));
 
-            if !matches!(&style, CallStyle::Async | CallStyle::Concurrent) {
+            if !matches!(
+                &style,
+                CallStyle::Async | CallStyle::AsyncSingleThreaded | CallStyle::Concurrent
+            ) {
                 self.src.push_str(
                     "
                    let _enter = span.enter();
@@ -2861,8 +2899,10 @@ impl<'a> InterfaceGenerator<'a> {
                 uwrite!(self.src, "arg{}, ", i);
             }
 
-            let instrument = if matches!(&style, CallStyle::Async | CallStyle::Concurrent)
-                && self.generator.opts.tracing
+            let instrument = if matches!(
+                &style,
+                CallStyle::Async | CallStyle::AsyncSingleThreaded | CallStyle::Concurrent
+            ) && self.generator.opts.tracing
             {
                 ".instrument(span.clone())"
             } else {
@@ -2870,8 +2910,10 @@ impl<'a> InterfaceGenerator<'a> {
             };
             uwriteln!(self.src, ")){instrument}{await_}?;");
 
-            let instrument = if matches!(&style, CallStyle::Async | CallStyle::Concurrent)
-                && self.generator.opts.tracing
+            let instrument = if matches!(
+                &style,
+                CallStyle::Async | CallStyle::AsyncSingleThreaded | CallStyle::Concurrent
+            ) && self.generator.opts.tracing
             {
                 ".instrument(span)"
             } else {
@@ -2941,7 +2983,7 @@ impl<'a> InterfaceGenerator<'a> {
                 .into_iter()
                 .partition(|func| match self.import_call_style(func) {
                     CallStyle::Concurrent => true,
-                    CallStyle::Async | CallStyle::Sync => false,
+                    CallStyle::Async | CallStyle::AsyncSingleThreaded | CallStyle::Sync => false,
                 });
         FunctionPartitioning { concurrent, sync }
     }
@@ -2957,14 +2999,18 @@ impl<'a> InterfaceGenerator<'a> {
         let wt = self.generator.wasmtime_path();
         let is_maybe_async = matches!(
             self.generator.opts.call_style(),
-            CallStyle::Async | CallStyle::Concurrent
+            CallStyle::Async | CallStyle::AsyncSingleThreaded | CallStyle::Concurrent
+        );
+        let is_maybe_async_single_threaded = matches!(
+            self.generator.opts.call_style(),
+            CallStyle::AsyncSingleThreaded
         );
         let partition = self.partition_concurrent_funcs(functions.iter().copied());
         ret.any_concurrent = !partition.concurrent.is_empty();
 
         let mut concurrent_supertraits = vec![format!("{wt}::component::HasData")];
         let mut sync_supertraits = vec![];
-        if is_maybe_async {
+        if is_maybe_async && !is_maybe_async_single_threaded {
             concurrent_supertraits.push("Send".to_string());
             sync_supertraits.push("Send".to_string());
         }
@@ -2996,7 +3042,7 @@ impl<'a> InterfaceGenerator<'a> {
             uwriteln!(self.src, "}}");
         }
 
-        if is_maybe_async {
+        if is_maybe_async && !is_maybe_async_single_threaded {
             uwriteln!(
                 self.src,
                 "#[{wt}::component::__internal::trait_variant_make(::core::marker::Send)]",
@@ -3017,7 +3063,9 @@ impl<'a> InterfaceGenerator<'a> {
             match extra {
                 ExtraTraitMethod::ResourceDrop { name } => {
                     let camel = name.to_upper_camel_case();
-                    if let CallStyle::Async | CallStyle::Concurrent = self
+                    if let CallStyle::Async
+                    | CallStyle::AsyncSingleThreaded
+                    | CallStyle::Concurrent = self
                         .generator
                         .opts
                         .drop_call_style(self.qualifier().as_deref(), name)
@@ -3051,7 +3099,11 @@ fn convert_{snake}(&mut self, err: {root}{custom_name}) -> {wt}::Result<{camel}>
         }
 
         // Generate impl HostResource for &mut HostResource
-        let maybe_send = if is_maybe_async { "+ Send" } else { "" };
+        let maybe_send = if is_maybe_async && !is_maybe_async_single_threaded {
+            "+ Send"
+        } else {
+            ""
+        };
         uwriteln!(
             self.src,
             "impl <_T: {trait_name} + ?Sized {maybe_send}> {trait_name} for &mut _T {{"
@@ -3068,7 +3120,7 @@ fn convert_{snake}(&mut self, err: {root}{custom_name}) -> {wt}::Result<{camel}>
                 uwrite!(self.src, "{},", to_rust_ident(name));
             }
             uwrite!(self.src, ")");
-            if let CallStyle::Async = &call_style {
+            if let CallStyle::Async | CallStyle::AsyncSingleThreaded = &call_style {
                 uwrite!(self.src, ".await");
             }
             uwriteln!(self.src, "}}");
@@ -3078,7 +3130,9 @@ fn convert_{snake}(&mut self, err: {root}{custom_name}) -> {wt}::Result<{camel}>
                 ExtraTraitMethod::ResourceDrop { name } => {
                     let camel = name.to_upper_camel_case();
                     let mut await_ = "";
-                    if let CallStyle::Async | CallStyle::Concurrent = self
+                    if let CallStyle::Async
+                    | CallStyle::AsyncSingleThreaded
+                    | CallStyle::Concurrent = self
                         .generator
                         .opts
                         .drop_call_style(self.qualifier().as_deref(), name)

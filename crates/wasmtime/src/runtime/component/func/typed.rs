@@ -187,6 +187,29 @@ where
             .await?
     }
 
+    /// Exactly like [`Self::call_async`], except for use in the current thread.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this is called on a function in a synchronous store. This
+    /// only works with functions defined within an asynchronous store. Also
+    /// panics if `store` does not own this function.
+    #[cfg(feature = "async")]
+    pub async fn call_async_single_rt(
+        &self,
+        mut store: impl AsContextMut,
+        params: Params,
+    ) -> Result<Return> {
+        let mut store = store.as_context_mut();
+        assert!(
+            store.0.async_support(),
+            "cannot use `call_async_single_rt` when async support is not enabled on the config"
+        );
+        store
+            .on_fiber_single_rt(|store| self.call_impl(store, params))
+            .await?
+    }
+
     /// Start a concurrent call to this function.
     ///
     /// Unlike [`Self::call`] and [`Self::call_async`] (both of which require
@@ -363,6 +386,15 @@ where
         store: impl AsContextMut<Data = T>,
     ) -> Result<()> {
         self.func.post_return_async(store).await
+    }
+
+    /// See [`Func::post_return_async_single_rt`]
+    #[cfg(feature = "async")]
+    pub async fn post_return_async_single_rt<T>(
+        &self,
+        store: impl AsContextMut<Data = T>,
+    ) -> Result<()> {
+        self.func.post_return_async_single_rt(store).await
     }
 }
 

@@ -128,6 +128,7 @@ impl Parse for Config {
                         async_configured = true;
                         opts.async_ = val;
                     }
+                    Opt::SingleThreaded(val) => opts.single_threaded = val,
                     Opt::ConcurrentImports(val) => opts.concurrent_imports = val,
                     Opt::ConcurrentExports(val) => opts.concurrent_exports = val,
                     Opt::TrappableErrorType(val) => opts.trappable_error_type = val,
@@ -297,6 +298,7 @@ mod kw {
     syn::custom_keyword!(require_store_data_send);
     syn::custom_keyword!(wasmtime_crate);
     syn::custom_keyword!(include_generated_code_from_file);
+    syn::custom_keyword!(single_threaded);
     syn::custom_keyword!(concurrent_imports);
     syn::custom_keyword!(concurrent_exports);
     syn::custom_keyword!(debug);
@@ -320,6 +322,7 @@ enum Opt {
     RequireStoreDataSend(bool),
     WasmtimeCrate(syn::Path),
     IncludeGeneratedCodeFromFile(bool),
+    SingleThreaded(bool),
     ConcurrentImports(bool),
     ConcurrentExports(bool),
     Debug(bool),
@@ -406,6 +409,10 @@ impl Parse for Opt {
                     span,
                 ))
             }
+        } else if l.peek(kw::single_threaded) {
+            input.parse::<kw::single_threaded>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::SingleThreaded(input.parse::<syn::LitBool>()?.value))
         } else if l.peek(kw::concurrent_imports) {
             input.parse::<kw::concurrent_imports>()?;
             input.parse::<Token![:]>()?;

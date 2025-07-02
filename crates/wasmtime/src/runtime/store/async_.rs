@@ -139,6 +139,22 @@ impl<'a, T> StoreContextMut<'a, T> {
         self.0.gc_async(why).await
     }
 
+    /// Perform garbage collection of `ExternRef`s.
+    ///
+    /// Same as [`Store::gc_async`].
+    ///
+    /// This method is only available when the `gc` Cargo feature is enabled.
+    #[cfg(feature = "gc")]
+    pub async fn gc_async_single_rt(
+        &mut self,
+        why: Option<&crate::GcHeapOutOfMemory<()>>,
+    ) -> Result<()>
+    where
+        T: 'static,
+    {
+        self.0.gc_async_single_rt(why).await
+    }
+
     /// Configures epoch-deadline expiration to yield to the async
     /// caller and the update the deadline.
     ///
@@ -174,6 +190,17 @@ impl StoreOpaque {
         func: impl FnOnce(&mut Self) -> R + Send + Sync,
     ) -> Result<R> {
         fiber::on_fiber(self, func).await
+    }
+
+    /// Executes a synchronous computation `func` asynchronously on a new fiber,
+    /// bounded in the current thread.
+    ///
+    /// Exactly like [`Self::on_fiber`] except for use in the current thread.
+    pub(crate) async fn on_fiber_single_rt<R: Send + Sync>(
+        &mut self,
+        func: impl FnOnce(&mut Self) -> R + Send + Sync,
+    ) -> Result<R> {
+        fiber::on_fiber_single_rt(self, func).await
     }
 
     #[cfg(feature = "gc")]
@@ -284,6 +311,21 @@ impl<T> StoreContextMut<'_, T> {
         let token = StoreToken::new(self.as_context_mut());
         self.0
             .on_fiber(|opaque| func(&mut token.as_context_mut(opaque.traitobj_mut())))
+            .await
+    }
+
+    /// Executes a synchronous computation `func` asynchronously on a new fiber,
+    /// bounded in the current thread.
+    pub(crate) async fn on_fiber_single_rt<R: Send + Sync>(
+        &mut self,
+        func: impl FnOnce(&mut StoreContextMut<'_, T>) -> R + Send + Sync,
+    ) -> Result<R>
+    where
+        T: 'static,
+    {
+        let token = StoreToken::new(self.as_context_mut());
+        self.0
+            .on_fiber_single_rt(|opaque| func(&mut token.as_context_mut(opaque.traitobj_mut())))
             .await
     }
 }

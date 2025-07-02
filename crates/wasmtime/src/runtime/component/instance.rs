@@ -998,6 +998,7 @@ impl<T: 'static> InstancePre<T> {
         );
         self.instantiate_impl(store)
     }
+
     /// Performs the instantiation process into the store specified.
     ///
     /// Exactly like [`Self::instantiate`] except for use on async stores.
@@ -1017,6 +1018,27 @@ impl<T: 'static> InstancePre<T> {
             "must use sync instantiation when async support is disabled"
         );
         store.on_fiber(|store| self.instantiate_impl(store)).await?
+    }
+
+    /// Performs the instantiation process into the store specified.
+    ///
+    /// Exactly like [`Self::instantiate_async`] except for use in the
+    /// current thread.
+    //
+    // TODO: needs more docs
+    #[cfg(feature = "async")]
+    pub async fn instantiate_async_single_rt(
+        &self,
+        mut store: impl AsContextMut<Data = T>,
+    ) -> Result<Instance> {
+        let mut store = store.as_context_mut();
+        assert!(
+            store.0.async_support(),
+            "must use sync instantiation when async support is disabled"
+        );
+        store
+            .on_fiber_single_rt(|store| self.instantiate_impl(store))
+            .await?
     }
 
     fn instantiate_impl(&self, mut store: impl AsContextMut<Data = T>) -> Result<Instance> {

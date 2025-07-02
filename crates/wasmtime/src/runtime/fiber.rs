@@ -306,6 +306,24 @@ impl<'a, 'b> BlockingContext<'a, 'b> {
         }
     }
 
+    /// Blocks on the asynchronous computation represented by `future` and
+    /// produces the result here, in-line, in the current thread.
+    ///
+    /// This is exactly like [`Self::block_on`] except it's bounded
+    /// in the current thread.
+    pub(crate) fn block_on_single_rt<F>(&mut self, future: F) -> Result<F::Output>
+    where
+        F: Future,
+    {
+        let mut future = core::pin::pin!(future);
+        loop {
+            match future.as_mut().poll(self.future_cx.as_mut().unwrap()) {
+                Poll::Ready(v) => break Ok(v),
+                Poll::Pending => self.suspend(StoreFiberYield::KeepStore)?,
+            }
+        }
+    }
+
     /// Suspend this fiber with `yield_` as the reason.
     ///
     /// This function will suspend the current fiber and only return after the
@@ -345,6 +363,20 @@ impl<T> StoreContextMut<'_, T> {
     ) -> Result<R> {
         BlockingContext::with(self.0, |store, cx| {
             cx.block_on(f(StoreContextMut(store)).as_mut())
+        })
+    }
+
+    /// Blocks on the future computed by `f` in the current thread.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this is invoked outside the context of a fiber.
+    pub(crate) fn block_on_single_rt<R>(
+        self,
+        f: impl FnOnce(StoreContextMut<'_, T>) -> Pin<Box<dyn Future<Output = R> + '_>>,
+    ) -> Result<R> {
+        BlockingContext::with(self.0, |store, cx| {
+            cx.block_on_single_rt(f(StoreContextMut(store)).as_mut())
         })
     }
 
@@ -850,6 +882,37 @@ pub(crate) fn make_fiber<'a>(
 /// Run the specified function on a newly-created fiber and `.await` its
 /// completion.
 pub(crate) async fn on_fiber<R: Send + Sync>(
+    store: &mut StoreOpaque,
+    func: impl FnOnce(&mut StoreOpaque) -> R + Send + Sync,
+) -> Result<R> {
+    let config = store.engine().config();
+    debug_assert!(store.async_support());
+    debug_assert!(config.async_stack_size > 0);
+
+    let mut result = None;
+    let fiber = make_fiber(store.traitobj_mut(), |store| {
+        result = Some(func(store));
+        Ok(())
+    })?;
+
+    {
+        let fiber = FiberFuture {
+            store,
+            fiber: Some(fiber),
+            on_release: OnRelease::ReturnPending,
+        }
+        .await
+        .unwrap();
+
+        debug_assert!(fiber.is_none());
+    }
+
+    Ok(result.unwrap())
+}
+
+/// Run the specified function on a newly-created fiber and `.await` its
+/// completion in the current thread.
+pub(crate) async fn on_fiber_single_rt<R: Send + Sync>(
     store: &mut StoreOpaque,
     func: impl FnOnce(&mut StoreOpaque) -> R + Send + Sync,
 ) -> Result<R> {

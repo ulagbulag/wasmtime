@@ -288,6 +288,33 @@ impl Func {
             .await?
     }
 
+    /// Exactly like [`Self::call`] except for use on async stores.
+    ///
+    /// Note that after this [`Func::post_return_async_single_rt`] will be used
+    /// instead of the sendable version at [`Func::post_return_async`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if this is called on a function in a synchronous store. This
+    /// only works with functions defined within an asynchronous store. Also
+    /// panics if `store` does not own this function.
+    #[cfg(feature = "async")]
+    pub async fn call_async_single_rt(
+        &self,
+        mut store: impl AsContextMut,
+        params: &[Val],
+        results: &mut [Val],
+    ) -> Result<()> {
+        let mut store = store.as_context_mut();
+        assert!(
+            store.0.async_support(),
+            "cannot use `call_async_single_rt` without enabling async support in the config"
+        );
+        store
+            .on_fiber_single_rt(|store| self.call_impl(store, params, results))
+            .await?
+    }
+
     fn call_impl(
         &self,
         mut store: impl AsContextMut,
@@ -553,6 +580,28 @@ impl Func {
         // some func's post_return will not need the async context (i.e. end up
         // calling async host functionality)
         store.on_fiber(|store| self.post_return_impl(store)).await?
+    }
+
+    /// Exactly like [`Self::post_return_async`] except for use on async stores
+    /// in the current thread.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this is called on a function in a synchronous store. This
+    /// only works with functions defined within an asynchronous store.
+    #[cfg(feature = "async")]
+    pub async fn post_return_async_single_rt(&self, mut store: impl AsContextMut) -> Result<()> {
+        let mut store = store.as_context_mut();
+        assert!(
+            store.0.async_support(),
+            "cannot use `post_return_async_single_rt` without enabling async support in the config"
+        );
+        // Future optimization opportunity: conditionally use a fiber here since
+        // some func's post_return will not need the async context (i.e. end up
+        // calling async host functionality)
+        store
+            .on_fiber_single_rt(|store| self.post_return_impl(store))
+            .await?
     }
 
     fn post_return_impl(&self, mut store: impl AsContextMut) -> Result<()> {

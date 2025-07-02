@@ -1099,6 +1099,59 @@ impl Func {
         Ok(result)
     }
 
+    /// Invokes this function with the `params` given, returning the results
+    /// asynchronously in the current thread.
+    ///
+    /// This function is the same as [`Func::call_async`] except that it is
+    /// bounded in the current thread. This is only compatible with stores
+    /// associated with an [asynchronous config](crate::Config::async_support).
+    ///
+    /// It's important to note that the execution of WebAssembly will happen
+    /// synchronously in the `poll` method of the future returned from this
+    /// function. Wasmtime does not manage its own thread pool or similar to
+    /// execute WebAssembly in. Future `poll` methods are generally expected to
+    /// resolve quickly, so it's recommended that you run or poll this future
+    /// in a "blocking context".
+    ///
+    /// For more information see the documentation on [asynchronous
+    /// configs](crate::Config::async_support).
+    ///
+    /// # Errors
+    ///
+    /// For more information on errors see the [`Func::call_async`]
+    /// documentation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this is called on a function in a synchronous store. This
+    /// only works with functions defined within an asynchronous store. Also
+    /// panics if `store` does not own this function.
+    #[cfg(feature = "async")]
+    pub async fn call_async_single_rt(
+        &self,
+        mut store: impl AsContextMut<Data: Send>,
+        params: &[Val],
+        results: &mut [Val],
+    ) -> Result<()> {
+        let mut store = store.as_context_mut();
+        assert!(
+            store.0.async_support(),
+            "cannot use `call_async_single_rt` without enabling async support in the config",
+        );
+
+        let _need_gc = self.call_impl_check_args(&mut store, params, results)?;
+
+        #[cfg(feature = "gc")]
+        if _need_gc {
+            store.gc_async(None).await?;
+        }
+
+        let result = store
+            .on_fiber_single_rt(|store| unsafe { self.call_impl_do_call(store, params, results) })
+            .await??;
+        Ok(result)
+    }
+
     /// Perform dynamic checks that the arguments given to us match
     /// the signature of this function and are appropriate to pass to this
     /// function.
