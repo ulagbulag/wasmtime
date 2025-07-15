@@ -295,7 +295,7 @@ impl<'a, 'b> BlockingContext<'a, 'b> {
     /// fiber crosses threads.
     pub(crate) fn block_on<F>(&mut self, future: F) -> Result<F::Output>
     where
-        F: Future + Send,
+        F: Future,
     {
         let mut future = core::pin::pin!(future);
         loop {
@@ -341,7 +341,7 @@ impl<T> StoreContextMut<'_, T> {
     /// Panics if this is invoked outside the context of a fiber.
     pub(crate) fn block_on<R>(
         self,
-        f: impl FnOnce(StoreContextMut<'_, T>) -> Pin<Box<dyn Future<Output = R> + Send + '_>>,
+        f: impl FnOnce(StoreContextMut<'_, T>) -> Pin<Box<dyn Future<Output = R> + '_>>,
     ) -> Result<R> {
         self.with_blocking(|store, cx| cx.block_on(f(store).as_mut()))
     }
@@ -368,7 +368,7 @@ impl<T> crate::store::StoreInner<T> {
     /// Panics if this is invoked outside the context of a fiber.
     pub(crate) fn block_on<R>(
         &mut self,
-        f: impl FnOnce(StoreContextMut<'_, T>) -> Pin<Box<dyn Future<Output = R> + Send + '_>>,
+        f: impl FnOnce(StoreContextMut<'_, T>) -> Pin<Box<dyn Future<Output = R> + '_>>,
     ) -> Result<R> {
         BlockingContext::with(self, |store, cx| {
             cx.block_on(f(StoreContextMut(store)).as_mut())
@@ -384,7 +384,7 @@ impl StoreOpaque {
     /// Panics if this is invoked outside the context of a fiber.
     pub(crate) fn block_on<R>(
         &mut self,
-        f: impl FnOnce(&mut Self) -> Pin<Box<dyn Future<Output = R> + Send + '_>>,
+        f: impl FnOnce(&mut Self) -> Pin<Box<dyn Future<Output = R> + '_>>,
     ) -> Result<R> {
         BlockingContext::with(self, |store, cx| cx.block_on(f(store).as_mut()))
     }

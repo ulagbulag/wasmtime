@@ -176,11 +176,7 @@ where
     /// only works with functions defined within an asynchronous store. Also
     /// panics if `store` does not own this function.
     #[cfg(feature = "async")]
-    pub async fn call_async(
-        &self,
-        mut store: impl AsContextMut<Data: Send>,
-        params: Params,
-    ) -> Result<Return>
+    pub async fn call_async(&self, mut store: impl AsContextMut, params: Params) -> Result<Return>
     where
         Return: 'static,
     {
@@ -548,10 +544,7 @@ where
 
     /// See [`Func::post_return_async`]
     #[cfg(feature = "async")]
-    pub async fn post_return_async<T: Send>(
-        &self,
-        store: impl AsContextMut<Data = T>,
-    ) -> Result<()> {
+    pub async fn post_return_async<T>(&self, store: impl AsContextMut<Data = T>) -> Result<()> {
         self.func.post_return_async(store).await
     }
 }

@@ -471,10 +471,7 @@ impl<T: 'static> LinkerInstance<'_, T> {
     #[cfg(feature = "async")]
     pub fn func_wrap_async<Params, Return, F>(&mut self, name: &str, f: F) -> Result<()>
     where
-        F: Fn(
-                StoreContextMut<'_, T>,
-                Params,
-            ) -> Box<dyn Future<Output = Result<Return>> + Send + '_>
+        F: Fn(StoreContextMut<'_, T>, Params) -> Box<dyn Future<Output = Result<Return>> + '_>
             + Send
             + Sync
             + 'static,
@@ -687,7 +684,7 @@ impl<T: 'static> LinkerInstance<'_, T> {
                 StoreContextMut<'a, T>,
                 &'a [Val],
                 &'a mut [Val],
-            ) -> Box<dyn Future<Output = Result<()>> + Send + 'a>
+            ) -> Box<dyn Future<Output = Result<()>> + 'a>
             + Send
             + Sync
             + 'static,
@@ -780,7 +777,7 @@ impl<T: 'static> LinkerInstance<'_, T> {
     #[cfg(feature = "async")]
     pub fn resource_async<F>(&mut self, name: &str, ty: ResourceType, dtor: F) -> Result<()>
     where
-        F: Fn(StoreContextMut<'_, T>, u32) -> Box<dyn Future<Output = Result<()>> + Send + '_>
+        F: Fn(StoreContextMut<'_, T>, u32) -> Box<dyn Future<Output = Result<()>> + '_>
             + Send
             + Sync
             + 'static,

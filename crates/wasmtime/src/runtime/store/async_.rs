@@ -279,7 +279,7 @@ impl<T> StoreContextMut<'_, T> {
         func: impl FnOnce(&mut StoreContextMut<'_, T>) -> R + Send + Sync,
     ) -> Result<R>
     where
-        T: Send + 'static,
+        T: 'static,
     {
         let token = StoreToken::new(self.as_context_mut());
         self.0

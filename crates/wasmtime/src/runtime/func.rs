@@ -502,7 +502,7 @@ impl Func {
                 Caller<'a, T>,
                 &'a [Val],
                 &'a mut [Val],
-            ) -> Box<dyn Future<Output = Result<()>> + Send + 'a>
+            ) -> Box<dyn Future<Output = Result<()>> + 'a>
             + Send
             + Sync
             + 'static,
@@ -827,10 +827,7 @@ impl Func {
     #[cfg(feature = "async")]
     pub fn wrap_async<T, F, P, R>(store: impl AsContextMut<Data = T>, func: F) -> Func
     where
-        F: for<'a> Fn(Caller<'a, T>, P) -> Box<dyn Future<Output = R> + Send + 'a>
-            + Send
-            + Sync
-            + 'static,
+        F: for<'a> Fn(Caller<'a, T>, P) -> Box<dyn Future<Output = R> + 'a> + Send + Sync + 'static,
         P: WasmTyList,
         R: WasmRet,
         T: 'static,

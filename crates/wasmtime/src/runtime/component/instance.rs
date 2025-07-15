@@ -1007,10 +1007,7 @@ impl<T: 'static> InstancePre<T> {
     pub async fn instantiate_async(
         &self,
         mut store: impl AsContextMut<Data = T>,
-    ) -> Result<Instance>
-    where
-        T: Send,
-    {
+    ) -> Result<Instance> {
         let mut store = store.as_context_mut();
         assert!(
             store.0.async_support(),

@@ -459,7 +459,7 @@ impl<T> Linker<T> {
                 Caller<'a, T>,
                 &'a [Val],
                 &'a mut [Val],
-            ) -> Box<dyn Future<Output = Result<()>> + Send + 'a>
+            ) -> Box<dyn Future<Output = Result<()>> + 'a>
             + Send
             + Sync
             + 'static,
@@ -559,7 +559,7 @@ impl<T> Linker<T> {
         func: F,
     ) -> Result<&mut Self>
     where
-        F: for<'a> Fn(Caller<'a, T>, Params) -> Box<dyn Future<Output = Args> + Send + 'a>
+        F: for<'a> Fn(Caller<'a, T>, Params) -> Box<dyn Future<Output = Args> + 'a>
             + Send
             + Sync
             + 'static,

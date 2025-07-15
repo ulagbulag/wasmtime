@@ -673,7 +673,7 @@ impl Func {
     /// Panics if this is called on a function in a synchronous store. This
     /// only works with functions defined within an asynchronous store.
     #[cfg(feature = "async")]
-    pub async fn post_return_async(&self, mut store: impl AsContextMut<Data: Send>) -> Result<()> {
+    pub async fn post_return_async(&self, mut store: impl AsContextMut) -> Result<()> {
         let mut store = store.as_context_mut();
         assert!(
             store.0.async_support(),

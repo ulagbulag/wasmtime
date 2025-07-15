@@ -289,8 +289,7 @@ impl Opts {
     }
 
     fn is_store_data_send(&self) -> bool {
-        matches!(self.call_style(), CallStyle::Async | CallStyle::Concurrent)
-            || self.require_store_data_send
+        matches!(self.call_style(), CallStyle::Concurrent) || self.require_store_data_send
     }
 
     pub fn import_call_style(&self, qualifier: Option<&str>, f: &str) -> CallStyle {
@@ -845,9 +844,8 @@ pub fn new<_T>(
         let world_name = &resolve.worlds[world].name;
         let camel = to_rust_upper_camel_case(&world_name);
         let (async_, async__, where_clause, await_) = match self.opts.call_style() {
-            CallStyle::Async | CallStyle::Concurrent => {
-                ("async", "_async", "where _T: Send", ".await")
-            }
+            CallStyle::Concurrent => ("async", "_async", "where _T: Send", ".await"),
+            CallStyle::Async => ("async", "_async", "", ".await"),
             CallStyle::Sync => ("", "", "", ""),
         };
         uwriteln!(
@@ -1442,7 +1440,7 @@ impl Wasmtime {
             sync.push(world_trait.name.clone());
             concurrent.extend(world_trait.concurrent_name.clone());
         }
-        if let CallStyle::Async | CallStyle::Concurrent = self.opts.call_style() {
+        if let CallStyle::Concurrent = self.opts.call_style() {
             sync.push("Send".to_string());
             if !concurrent.is_empty() {
                 concurrent.push("Send".to_string());
@@ -2363,8 +2361,8 @@ impl<'a> InterfaceGenerator<'a> {
         );
 
         let opt_t_send_bound = match self.generator.opts.call_style() {
-            CallStyle::Async | CallStyle::Concurrent => "+ Send",
-            CallStyle::Sync => "",
+            CallStyle::Concurrent => "+ Send",
+            CallStyle::Async | CallStyle::Sync => "",
         };
 
         let mut sync_bounds = "Host".to_string();
@@ -2772,17 +2770,11 @@ impl<'a> InterfaceGenerator<'a> {
             uwrite!(self.src, ">");
         }
 
-        match style {
-            CallStyle::Concurrent => {
-                uwrite!(
-                    self.src,
-                    " where <S as {wt}::AsContext>::Data: Send + 'static",
-                );
-            }
-            CallStyle::Async => {
-                uwrite!(self.src, " where <S as {wt}::AsContext>::Data: Send");
-            }
-            CallStyle::Sync => {}
+        if concurrent || matches!(style, CallStyle::Concurrent) {
+            uwrite!(
+                self.src,
+                " where <S as {wt}::AsContext>::Data: Send + 'static",
+            );
         }
         uwrite!(self.src, "{{\n");
 
@@ -2963,16 +2955,13 @@ async move {{
     ) -> GeneratedTrait {
         let mut ret = GeneratedTrait::default();
         let wt = self.generator.wasmtime_path();
-        let is_maybe_async = matches!(
-            self.generator.opts.call_style(),
-            CallStyle::Async | CallStyle::Concurrent
-        );
+        let is_maybe_concurrent = matches!(self.generator.opts.call_style(), CallStyle::Concurrent);
         let partition = self.partition_concurrent_funcs(functions.iter().copied());
         ret.any_concurrent = !partition.concurrent.is_empty();
 
         let mut concurrent_supertraits = vec![format!("{wt}::component::HasData")];
         let mut sync_supertraits = vec![];
-        if is_maybe_async {
+        if is_maybe_concurrent {
             concurrent_supertraits.push("Send".to_string());
             sync_supertraits.push("Send".to_string());
         }
@@ -3004,7 +2993,7 @@ async move {{
             uwriteln!(self.src, "}}");
         }
 
-        if is_maybe_async {
+        if is_maybe_concurrent {
             uwriteln!(
                 self.src,
                 "#[{wt}::component::__internal::trait_variant_make(::core::marker::Send)]",
@@ -3059,7 +3048,7 @@ fn convert_{snake}(&mut self, err: {root}{custom_name}) -> {wt}::Result<{camel}>
         }
 
         // Generate impl HostResource for &mut HostResource
-        let maybe_send = if is_maybe_async { "+ Send" } else { "" };
+        let maybe_send = if is_maybe_concurrent { "+ Send" } else { "" };
         uwriteln!(
             self.src,
             "impl <_T: {trait_name} + ?Sized {maybe_send}> {trait_name} for &mut _T {{"
