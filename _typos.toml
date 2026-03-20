@@ -1,0 +1,168 @@
+[default]
+extend-ignore-re = [
+    # ---------------------------------
+    # Abbreviations
+    # ---------------------------------
+    # PNGs
+    " PNGs[ \\.]",
+
+    # ---------------------------------
+    # Hashing
+    # ---------------------------------
+    # "483CAF6E"
+    "\"[A-F0-9]{8}\"",
+
+    # ---------------------------------
+    # Normal Numbers
+    # ---------------------------------
+    "[-+]?0x1\\.[a-z0-9]{6,13}p[-+]?[0-9]+",
+
+    # ---------------------------------
+    # WAST
+    # ---------------------------------
+    # (@aas-3!@$d-@#4)
+    " *\\(@.+\\)",
+    # (export "dojgn-ejs9-nd188")
+    " *\\(export \"[a-z0-9-]+\"\\)",
+
+    # ---------------------------------
+    # Widely-used function names
+    # ---------------------------------
+    # encode_valu
+    # encode_valu_r_imm
+    # encode_valu_rr
+    # encode_valu_rrr_imm
+    # encode_valu_rrrr
+    "encode_valu(_r{1,4}(_imm)?)?",
+
+    # ---------------------------------
+    # Widely-used variable names
+    # ---------------------------------
+    # debug_aranges
+    "debug_aranges",
+    # swith_on
+    "swith_on",
+
+    # ---------------------------------
+    # Miscellaneous
+    # ---------------------------------
+    # ./tests/disas/winch/x64/atomic/rmw/or/i32_atomic_rmw8_oru.wat
+    # ./tests/disas/winch/x64/atomic/rmw/or/i32_atomic_rmw16_oru.wat
+    # ./tests/disas/winch/x64/atomic/rmw/or/i32_atomic_rmw32_oru.wat
+    # ./tests/disas/winch/x64/atomic/rmw/or/i64_atomic_rmw8_oru.wat
+    # ./tests/disas/winch/x64/atomic/rmw/or/i64_atomic_rmw16_oru.wat
+    # ./tests/disas/winch/x64/atomic/rmw/or/i64_atomic_rmw32_oru.wat
+    "i(32|64)_atomic_rmw(8|16|32)_oru.wat$",
+
+    # effect-ful
+    "effect-ful",
+    # feature-ful
+    "feature-ful",
+    # mis-used
+    "mis-used",
+    # pre-empted
+    "pre-empted",
+
+    # EigthMem
+    "EigthMem",
+    # ExpandedOrShrinked
+    "ExpandedOrShrinked",
+
+    # ---------------------------------
+    # source: ./cranelift/isle/veri/veri_engine/src/solver.rs
+    # ---------------------------------
+    # .assert(self.smt.named(format!("assum{i}"), *a))
+    "\"assum\\{i\\}\"",
+
+    # ---------------------------------
+    # source: ./crates/wasi/src/cli.rs
+    # ---------------------------------
+    # assert_eq!(read3, "jumped ove".as_bytes(), "third 10 bytes");
+    "\"jumped ove\".as_bytes()",
+    # assert_eq!(read4, "r the thre".as_bytes(), "fourth 10 bytes");
+    "\"r the thre\".as_bytes()",
+
+    # ---------------------------------
+    # source: ./crates/wasmtime/src/runtime/vm/mpk/pkru.rs
+    # ---------------------------------
+    # && result.edx == u32::from_le_bytes(*b"ineI")
+    "\\(\\*b\"ineI\"\\)",
+
+    # ---------------------------------
+    # source: ./docs/cli-install.md
+    # ---------------------------------
+    # wasmtime 30.0.0 (ede663c2a 2025-02-19)
+    "[a-z0-9-]+ ([0-9]+\\.){2}[0-9]+ \\([a-f0-9]{9} [0-9]{4}-[0-9]{2}-[0-9]{2}\\)",
+
+    # ---------------------------------
+    # source: ./docs/examples-debugging-core-dumps.md
+    # ---------------------------------
+    # 4: 0x47bd - <unknown>!std::sys_common::backtrace::__rust_end_short_backtrace::hed32bc5557405634
+    "__rust_end_short_backtrace::[a-z0-9]{17}",
+]
+
+[default.extend-words]
+# Abbreviations
+BA = "BA" # Bytecode Alliance
+SEH = "SEH" # Structured Exception Handling
+Tpe = "Tpe" # `T` (trailing significand bits) + fpe (Floating Point Exception)
+
+flate = "flate" # flate2
+
+# Instructions
+addd = "addd"
+ands = "ands"
+fle = "fle"
+offsetp = "offsetp"
+rela = "rela"
+setp = "setp"
+shll = "shll"
+sur = "sur"
+sxl = "sxl"
+vor = "vor"
+
+# Widely-used register names
+fpr = "fpr" # Floating Point Register
+
+# Widely-used variable names
+acces = "acces" # Access
+alo = "alo" # `a` low
+alow = "alow" # `a` low
+anc = "anc" # Approximation of N, Ceil
+datas = "datas" # A list of `data`
+elemt = "elemt" # Element
+lits = "lits" # Literals
+ot = "ot" # Qualified Thread
+strat = "strat" # Strategy
+
+# Miscellaneous
+endianity = "endianity" # Endianness
+invokable = "invokable"
+premable = "premable"
+transferrable = "transferrable" # Transferable
+
+# Typos
+contant = "constant"
+contrain = "constrain"
+doens = "doesn"
+drived = "derived"
+executiong = "execution"
+instructios = "instructions"
+intance = "instance"
+reprented = "represented"
+strack = "stack"
+tiems = "times"
+vaiant = "variant"
+
+[files]
+extend-exclude = [
+    # External Vocabulary
+    "crates/wasi-nn/examples/**/*.txt",
+    # Obfuscation
+    "docs/js/*.min.*.js",
+    # Submodules
+    "tests/component-model",
+    "tests/spec_testsuite",
+    "tests/wasi_testsuite",
+    "typos.txt",
+]
